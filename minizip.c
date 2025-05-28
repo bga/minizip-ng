@@ -60,8 +60,8 @@ int32_t minizip_erase(const char *src_path, const char *target_path, int32_t arg
 /***************************************************************************/
 
 int32_t minizip_banner(void) {
-    printf("minizip-ng %s - https://github.com/zlib-ng/minizip-ng\n", MZ_VERSION);
-    printf("---------------------------------------------------\n");
+    fprintf(stderr, "minizip-ng %s - https://github.com/zlib-ng/minizip-ng\n", MZ_VERSION);
+    fprintf(stderr, "---------------------------------------------------\n");
     return MZ_OK;
 }
 
