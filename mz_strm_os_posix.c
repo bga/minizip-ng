@@ -64,6 +64,20 @@ typedef struct mz_stream_posix_s {
 
 /***************************************************************************/
 
+int32_t mz_stream_os_open_osStream(void *stream, void* osStream) {
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
+
+    if (!osStream)
+        return MZ_PARAM_ERROR;
+
+    posix->handle = (FILE *)osStream;
+    if (!posix->handle) {
+        posix->error = errno;
+        return MZ_OPEN_ERROR;
+    }
+
+    return MZ_OK;
+}
 int32_t mz_stream_os_open(void *stream, const char *path, int32_t mode) {
     mz_stream_posix *posix = (mz_stream_posix *)stream;
     const char *mode_fopen = NULL;

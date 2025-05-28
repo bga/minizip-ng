@@ -14,6 +14,7 @@
 #include "mz_os.h"
 #include "mz_strm.h"
 #include "mz_strm_buf.h"
+#include "mz_strm_os.h"
 #include "mz_strm_split.h"
 #include "mz_zip.h"
 #include "mz_zip_rw.h"
@@ -101,6 +102,21 @@ int32_t minizip_help(void) {
 
 /***************************************************************************/
 
+int32_t minizip_open(void *reader, const char *path) {
+    int32_t err = MZ_OK;
+    if(path != NULL && strcmp(path, "-") != 0) {
+        err = mz_zip_reader_open_file(reader, path);
+    }
+    else {
+        void* stdinStream = mz_stream_os_create();
+        
+        err = mz_stream_os_open_osStream(stdinStream, stdin);
+        err = mz_zip_reader_open(reader, stdinStream);
+    }
+
+    return err;
+}
+
 int32_t minizip_list(const char *path, int32_t encoding, FILE* outStream) {
     mz_zip_file *file_info = NULL;
     uint32_t ratio = 0;
@@ -115,7 +131,7 @@ int32_t minizip_list(const char *path, int32_t encoding, FILE* outStream) {
     if (!reader)
         return MZ_MEM_ERROR;
 
-    err = mz_zip_reader_open_file(reader, path);
+    err = minizip_open(reader, path);
     if (err != MZ_OK) {
         MINIZIP_ERR("Error %" PRId32 " opening archive %s\n", err, path);
         mz_zip_reader_delete(&reader);
@@ -398,8 +414,7 @@ int32_t minizip_extract(const char *path, const char *pattern, const char *desti
     mz_zip_reader_set_progress_cb(reader, options, minizip_extract_progress_cb);
     mz_zip_reader_set_overwrite_cb(reader, options, minizip_extract_overwrite_cb);
 
-    err = mz_zip_reader_open_file(reader, path);
-
+    err = minizip_open(reader, path);
     if (err != MZ_OK) {
         MINIZIP_ERR("Error %" PRId32 " opening archive %s\n", err, path);
     } else {
@@ -583,6 +598,8 @@ int main(int argc, const char *argv[]) {
             char c = argv[i][1];
             if ((c == 'l') || (c == 'L'))
                 do_list = 1;
+            else if ((c == 0))
+                path_arg = i;
             else if ((c == 'x') || (c == 'X'))
                 do_extract = 1;
             else if ((c == 'e') || (c == 'E'))
