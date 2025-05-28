@@ -120,7 +120,8 @@ typedef struct mz_zip_s {
 /***************************************************************************/
 
 #if 0
-#  define mz_zip_print printf
+#define mz_zip_print(format, ...) \
+  fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__)
 #else
 #  define mz_zip_print(fmt, ...)
 #endif

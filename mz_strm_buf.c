@@ -50,7 +50,8 @@ typedef struct mz_stream_buffered_s {
 /***************************************************************************/
 
 #if 0
-#  define mz_stream_buffered_print printf
+#define mz_stream_buffered_print(format, ...) \
+  fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__)
 #else
 #  define mz_stream_buffered_print(fmt, ...)
 #endif
