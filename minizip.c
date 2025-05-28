@@ -42,7 +42,7 @@ typedef struct minizip_opt_s {
 int32_t minizip_banner(void);
 int32_t minizip_help(void);
 
-int32_t minizip_list(const char *path, int32_t encoding);
+int32_t minizip_list(const char *path, int32_t encoding, FILE* outStream);
 
 int32_t minizip_add_entry_cb(void *handle, void *userdata, mz_zip_file *file_info);
 int32_t minizip_add_progress_cb(void *handle, void *userdata, mz_zip_file *file_info, int64_t position);
@@ -96,7 +96,7 @@ int32_t minizip_help(void) {
 
 /***************************************************************************/
 
-int32_t minizip_list(const char *path, int32_t encoding) {
+int32_t minizip_list(const char *path, int32_t encoding, FILE* outStream) {
     mz_zip_file *file_info = NULL;
     uint32_t ratio = 0;
     int32_t err = MZ_OK;
@@ -127,8 +127,8 @@ int32_t minizip_list(const char *path, int32_t encoding) {
         return err;
     }
 
-    printf("      Packed     Unpacked Ratio Method   Attribs Date     Time  CRC-32     Name\n");
-    printf("      ------     -------- ----- ------   ------- ----     ----  ------     ----\n");
+    fprintf(outStream , "      Packed     Unpacked Ratio Method   Attribs Date     Time  CRC-32     Name\n");
+    fprintf(outStream, "      ------     -------- ----- ------   ------- ----     ----  ------     ----\n");
 
     /* Enumerate all entries in the archive */
     while (err == MZ_OK) {
@@ -162,7 +162,7 @@ int32_t minizip_list(const char *path, int32_t encoding) {
         }
 
         /* Print entry information */
-        printf("%12" PRId64 " %12" PRId64 "  %3" PRIu32 "%% %6s%c %8" PRIx32 " %2.2" PRIu32 "-%2.2" PRIu32
+        fprintf(outStream, "%12" PRId64 " %12" PRId64 "  %3" PRIu32 "%% %6s%c %8" PRIx32 " %2.2" PRIu32 "-%2.2" PRIu32
                "-%2.2" PRIu32 " %2.2" PRIu32 ":%2.2" PRIu32 " %8.8" PRIx32 "   %s\n",
                file_info->compressed_size, file_info->uncompressed_size, ratio, method, crypt, file_info->external_fa,
                (uint32_t)tmu_date.tm_mon + 1, (uint32_t)tmu_date.tm_mday, (uint32_t)tmu_date.tm_year % 100,
@@ -669,7 +669,7 @@ int main(int argc, const char *argv[]) {
 
     if (do_list) {
         /* List archive contents */
-        err = minizip_list(path, options.encoding);
+        err = minizip_list(path, options.encoding, stderr);
     } else if (do_extract) {
         if (argc > path_arg + 1)
             filename_to_extract = argv[path_arg + 1];
