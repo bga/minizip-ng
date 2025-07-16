@@ -15,6 +15,10 @@
 extern "C" {
 #endif
 
+
+#include "mz.h"
+#include <stdio.h>
+
 /***************************************************************************/
 
 int32_t mz_stream_os_open(void *stream, const char *path, int32_t mode);

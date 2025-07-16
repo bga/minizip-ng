@@ -20,6 +20,7 @@
 #include "mz_zip_rw.h"
 
 #include <stdio.h> /* printf */
+#include <fnmatch.h>
 
 /***************************************************************************/
 
@@ -36,6 +37,7 @@ typedef struct minizip_opt_s {
     uint8_t zip_cd;
     uint8_t verbose;
     uint8_t aes;
+    uint8_t outputAllMatched;
 } minizip_opt;
 
 /***************************************************************************/
@@ -77,6 +79,7 @@ int32_t minizip_help(void) {
         "  -o  Overwrite existing files\n"
         "  -c  File names use cp437 encoding (or specified codepage)\n"
         "  -a  Append to existing zip file\n"
+        "  -A  output all matched files to stdout\n"
         "  -i  Include full path of files\n"
         "  -f  Follow symbolic links\n"
         "  -y  Store symbolic links\n"
@@ -99,6 +102,12 @@ int32_t minizip_help(void) {
   fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__)
 #define MINIZIP_ERR(format, ...) \
   fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__)
+
+int32_t minizip_stream_write_cb(void *stream, const void *buf, int32_t size) {
+    // mz_stream_posix *posix = (mz_stream_posix *)stream;
+    // return fwrite(buf, 1, size, stream->handle);
+    return mz_stream_os_write(stream, buf, size);
+}
 
 /***************************************************************************/
 
@@ -193,6 +202,7 @@ int32_t minizip_list(const char *path, int32_t encoding, FILE* outStream) {
         if (utf8_string)
             mz_os_utf8_string_delete(&utf8_string);
 
+        err = mz_zip_reader_entry_skip(reader);
         err = mz_zip_reader_goto_next_entry(reader);
 
         if (err != MZ_OK && err != MZ_END_OF_LIST) {
@@ -394,6 +404,147 @@ int32_t minizip_extract_overwrite_cb(void *handle, void *userdata, mz_zip_file *
     return MZ_OK;
 }
 
+// char const* str_matchMiddle(char const* s, char const* fixed) {
+char const* str_matchStart(char const* s, char const* fixed) {
+    while(*s && *fixed && *s == *fixed) {
+        ++s;
+        ++fixed;
+    }
+    return (*fixed == 0) ? s : NULL; 
+}
+
+int32_t minizip_extractMatchToStdout(const char *path, const char *pattern, const char *destination, const char *password,
+                        minizip_opt *options, int32_t encoding) {
+
+    void *reader = NULL;
+    int32_t err = MZ_OK;
+    int32_t err_close = MZ_OK;
+
+    mz_zip_file *file_info = NULL;
+    uint32_t ratio = 0;
+    struct tm tmu_date;
+    const char *method = NULL;
+    char *utf8_string = NULL;
+    char crypt = ' ';
+
+    MINIZIP_LOG("Archive %s\n", path);
+
+    /* Create zip reader */
+    reader = mz_zip_reader_create();
+    if (!reader)
+        return MZ_MEM_ERROR;
+
+    // mz_zip_reader_set_pattern(reader, pattern, 1);
+    mz_zip_reader_set_pattern(reader, NULL, 1);
+    mz_zip_reader_set_password(reader, password);
+    mz_zip_reader_set_encoding(reader, options->encoding);
+    mz_zip_reader_set_entry_cb(reader, options, minizip_extract_entry_cb);
+    mz_zip_reader_set_progress_cb(reader, options, minizip_extract_progress_cb);
+    mz_zip_reader_set_overwrite_cb(reader, options, minizip_extract_overwrite_cb);
+
+    err = minizip_open(reader, path);
+    if (err != MZ_OK) {
+        MINIZIP_ERR("Error %" PRId32 " opening archive %s\n", err, path);
+        return err;
+    };
+
+    void* stdoutStream = mz_stream_os_create();
+        
+    mz_stream_os_open_osStream(stdoutStream, stdout);
+
+
+    err = mz_zip_reader_goto_first_entry(reader);
+
+    if (err != MZ_OK && err != MZ_END_OF_LIST) {
+        MINIZIP_ERR("Error %" PRId32 " going to first entry in archive\n", err);
+        mz_zip_reader_delete(&reader);
+        return err;
+    }
+
+    MINIZIP_LOG("      Packed     Unpacked Ratio Method   Attribs Date     Time  CRC-32     Name\n");
+    MINIZIP_LOG("      ------     -------- ----- ------   ------- ----     ----  ------     ----\n");
+
+    // bool isEndOfList = false;
+    /* Enumerate all entries in the archive */
+    while (err == MZ_OK) {
+        err = mz_zip_reader_entry_get_info(reader, &file_info);
+
+        if (err != MZ_OK) {
+            MINIZIP_ERR("Error %" PRId32 " getting entry info in archive\n", err);
+            break;
+        }
+
+        ratio = 0;
+        if (file_info->uncompressed_size > 0)
+            ratio = (uint32_t)((file_info->compressed_size * 100) / file_info->uncompressed_size);
+
+        /* Display a '*' if the file is encrypted */
+        if (file_info->flag & MZ_ZIP_FLAG_ENCRYPTED)
+            crypt = '*';
+        else
+            crypt = ' ';
+
+        method = mz_zip_get_compression_method_string(file_info->compression_method);
+        mz_zip_time_t_to_tm(file_info->modified_date, &tmu_date);
+
+        if ((encoding > 0) && (file_info->flag & MZ_ZIP_FLAG_UTF8) == 0) {
+            utf8_string = mz_os_utf8_string_create(file_info->filename, encoding);
+            if (!utf8_string) {
+                err = MZ_MEM_ERROR;
+                MINIZIP_ERR("Error %" PRId32 " creating UTF-8 string\n", err);
+                break;
+            }
+        }
+
+        /* Print entry information */
+        MINIZIP_LOG("%12" PRId64 " %12" PRId64 "  %3" PRIu32 "%% %6s%c %8" PRIx32 " %2.2" PRIu32 "-%2.2" PRIu32
+               "-%2.2" PRIu32 " %2.2" PRIu32 ":%2.2" PRIu32 " %8.8" PRIx32 "   %s\n",
+               file_info->compressed_size, file_info->uncompressed_size, ratio, method, crypt, file_info->external_fa,
+               (uint32_t)tmu_date.tm_mon + 1, (uint32_t)tmu_date.tm_mday, (uint32_t)tmu_date.tm_year % 100,
+               (uint32_t)tmu_date.tm_hour, (uint32_t)tmu_date.tm_min, file_info->crc,
+               utf8_string ? utf8_string : file_info->filename);
+
+        // if(fnmatch(pattern, file_info->filename, 0) == 0)
+            
+        // if(err == MZ_OK) err = mz_zip_reader_entry_open(reader);
+        if(err == MZ_OK) err = mz_zip_reader_entry_open_noSeek(reader);
+        if(err == MZ_OK) {
+            if(pattern == NULL || fnmatch(pattern, file_info->filename, FNM_CASEFOLD) == 0) {
+                err = mz_zip_reader_entry_save(reader, stdoutStream, minizip_stream_write_cb);
+                if(err == MZ_OK) {
+                    if(!options->outputAllMatched) break;
+                };
+            }
+            else {
+               err = mz_zip_reader_entry_skip(reader); 
+            }
+        }
+        // uint32_t crc32; int64_t compressed_size; int64_t uncompressed_size;
+        // if(err == MZ_OK) err = mz_zip_reader_entry_close(reader, &crc32, &compressed_size, &uncompressed_size);
+        if(err == MZ_OK) err = mz_zip_reader_entry_close(reader);
+
+        if (err != MZ_OK && err != MZ_END_OF_LIST) {
+            MINIZIP_ERR("Error %" PRId32 " extracting %s\n", err, file_info->filename);
+            break;
+        }
+        if (utf8_string)
+            mz_os_utf8_string_delete(&utf8_string);
+
+        err = mz_zip_reader_goto_next_entry(reader);
+
+        if (err != MZ_OK && err != MZ_END_OF_LIST) {
+            MINIZIP_ERR("Error %" PRId32 " going to next entry in archive\n", err);
+            break;
+        }
+    }
+
+    mz_zip_reader_delete(&reader);
+
+    if (err == MZ_END_OF_LIST)
+        err = MZ_OK;
+
+    return err;
+}
 int32_t minizip_extract(const char *path, const char *pattern, const char *destination, const char *password,
                         minizip_opt *options) {
     void *reader = NULL;
@@ -420,6 +571,11 @@ int32_t minizip_extract(const char *path, const char *pattern, const char *desti
     } else {
         /* Save all entries in archive to destination directory */
         err = mz_zip_reader_save_all(reader, destination);
+        // void* stdoutStream = mz_stream_os_create();
+        
+        // err = mz_stream_os_open_osStream(stdoutStream, stdout);
+
+        // err = mz_zip_reader_entry_save(reader, stdoutStream, NULL);
 
         if (err == MZ_END_OF_LIST) {
             if (pattern) {
@@ -604,7 +760,9 @@ int main(int argc, const char *argv[]) {
                 do_extract = 1;
             else if ((c == 'e') || (c == 'E'))
                 do_erase = 1;
-            else if ((c == 'a') || (c == 'A'))
+            else if ((c == 'A'))
+                options.outputAllMatched = 1;
+            else if ((c == 'a'))
                 options.append = 1;
             else if ((c == 'o') || (c == 'O'))
                 options.overwrite = 1;
@@ -697,7 +855,7 @@ int main(int argc, const char *argv[]) {
             filename_to_extract = argv[path_arg + 1];
 
         /* Extract archive */
-        err = minizip_extract(path, filename_to_extract, destination, password, &options);
+        err = minizip_extractMatchToStdout(path, filename_to_extract, destination, password, &options, options.encoding);
     } else if (do_erase) {
         /* Erase file in archive */
         err = minizip_erase(path, NULL, argc - (path_arg + 1), &argv[path_arg + 1]);

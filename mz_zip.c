@@ -43,6 +43,7 @@
 #endif
 
 #include "mz_zip.h"
+#include <unistd.h> //# usleep
 
 #include <ctype.h> /* tolower */
 #include <stdio.h> /* snprintf */
@@ -199,6 +200,31 @@ static uint16_t mz_zip_get_pk_verify(uint32_t dos_date, uint64_t crc, uint16_t f
 }
 #endif
 
+#define MATH_MIN(aArg, bArg) (((aArg) < (bArg)) ? (aArg) : (bArg))
+#define MZ_SKIP_BUFFER_SIZE 1024
+
+static int32_t mz_strm_skip(void *stream, int64_t bytesCount) {
+    int32_t err = MZ_OK;
+    err = mz_stream_seek(stream, bytesCount, MZ_SEEK_CUR);
+    if(err == MZ_OK) return err;
+    char* tempBuff = (char *)malloc(MZ_SKIP_BUFFER_SIZE);
+    while(0 < bytesCount) {
+        int32_t delta = mz_stream_read(stream, tempBuff, MATH_MIN(MZ_SKIP_BUFFER_SIZE,  bytesCount));
+        if(delta <= 0) { err = delta; break; };
+        bytesCount -= delta;
+    }
+    free(tempBuff);
+    // if(err == MZ_OK) {
+        err = (bytesCount == 0) ? MZ_OK : MZ_END_OF_STREAM;
+    // };
+    return err;  
+}
+int32_t mz_zip_entry_skip(void *handle) {
+    mz_zip *zip = (mz_zip *)handle;
+
+    return mz_strm_skip(zip->stream, zip->file_info.compressed_size);
+}
+
 /* Get info about the current file in the zip file */
 static int32_t mz_zip_entry_read_header(void *stream, uint8_t local, mz_zip_file *file_info, void *file_extra_stream) {
     uint64_t ntfs_time = 0;
@@ -228,6 +254,8 @@ static int32_t mz_zip_entry_read_header(void *stream, uint8_t local, mz_zip_file
     if (err == MZ_END_OF_STREAM)
         err = MZ_END_OF_LIST;
     else if (magic == MZ_ZIP_MAGIC_ENDHEADER || magic == MZ_ZIP_MAGIC_ENDHEADER64)
+        err = MZ_END_OF_LIST;
+    else if (magic == MZ_ZIP_MAGIC_CENTRALHEADER)
         err = MZ_END_OF_LIST;
     else if ((local) && (magic != MZ_ZIP_MAGIC_LOCALHEADER))
         err = MZ_FORMAT_ERROR;
@@ -1445,7 +1473,8 @@ int32_t mz_zip_open(void *handle, void *stream, int32_t mode) {
 
     if ((mode & MZ_OPEN_MODE_READ) || (mode & MZ_OPEN_MODE_APPEND)) {
         if ((mode & MZ_OPEN_MODE_CREATE) == 0) {
-            err = mz_zip_read_cd(zip);
+            // err = mz_zip_read_cd(zip);
+            err = MZ_OK;
             if (err != MZ_OK) {
                 mz_zip_print("Zip - Error detected reading cd (%" PRId32 ")\n", err);
                 if (zip->recover && mz_zip_recover_cd(zip) == MZ_OK)
@@ -1862,6 +1891,10 @@ static int32_t mz_zip_entry_open_int(void *handle, uint8_t raw, int16_t compress
 
     return err;
 }
+int32_t mz_zip_entry_read_open_noSeek(void *handle, uint8_t raw, int16_t compress_level, const char *password) {
+    return mz_zip_entry_open_int(handle, raw, compress_level, password);
+}
+
 
 int32_t mz_zip_entry_is_open(void *handle) {
     mz_zip *zip = (mz_zip *)handle;
@@ -2102,7 +2135,7 @@ int32_t mz_zip_entry_read_close(void *handle, uint32_t *crc32, int64_t *compress
 
         /* Seek to end of compressed stream since we might have over-read during compression */
         if (err == MZ_OK) {
-            err = mz_stream_seek(zip->stream,
+            if(0) err = mz_stream_seek(zip->stream,
                                  MZ_ZIP_SIZE_LD_ITEM + (int64_t)zip->local_file_info.filename_size +
                                      (int64_t)zip->local_file_info.extrafield_size + total_in,
                                  MZ_SEEK_CUR);
@@ -2253,7 +2286,8 @@ int32_t mz_zip_entry_seek_local_header(void *handle) {
     if ((zip->disk_offset_shift > 0) && (zip->file_info.disk_offset > (INT64_MAX - zip->disk_offset_shift)))
         return MZ_FORMAT_ERROR;
 
-    return mz_stream_seek(zip->stream, zip->file_info.disk_offset + zip->disk_offset_shift, MZ_SEEK_SET);
+    // return mz_stream_seek(zip->stream, zip->file_info.disk_offset + zip->disk_offset_shift, MZ_SEEK_SET);
+    return MZ_OK;
 }
 
 int32_t mz_zip_entry_get_compress_stream(void *handle, void **compress_stream) {
@@ -2358,9 +2392,10 @@ static int32_t mz_zip_goto_next_entry_int(void *handle) {
 
     mz_stream_set_prop_int64(zip->cd_stream, MZ_STREAM_PROP_DISK_NUMBER, -1);
 
-    err = mz_stream_seek(zip->cd_stream, zip->cd_current_pos, MZ_SEEK_SET);
+    // err = mz_stream_seek(zip->cd_stream, zip->cd_current_pos, MZ_SEEK_SET);
+    err = MZ_OK;
     if (err == MZ_OK)
-        err = mz_zip_entry_read_header(zip->cd_stream, 0, &zip->file_info, zip->file_info_stream);
+        err = mz_zip_entry_read_header(zip->cd_stream, 1, &zip->file_info, zip->file_info_stream);
     if (err == MZ_OK)
         zip->entry_scanned = 1;
     return err;

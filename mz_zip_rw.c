@@ -92,7 +92,7 @@ int32_t mz_zip_reader_open(void *handle, void *stream) {
         return err;
     }
 
-    mz_zip_reader_unzip_cd(reader);
+    //mz_zip_reader_unzip_cd(reader);
     return MZ_OK;
 }
 
@@ -370,6 +370,61 @@ int32_t mz_zip_reader_locate_entry(void *handle, const char *filename, uint8_t i
 
 /***************************************************************************/
 
+int32_t mz_zip_reader_entry_skip(void *handle) {
+    mz_zip_reader *reader = (mz_zip_reader *)handle;
+    return mz_zip_entry_skip(reader->zip_handle);
+}
+int32_t mz_zip_reader_entry_open_noSeek(void *handle) {
+    mz_zip_reader *reader = (mz_zip_reader *)handle;
+    int32_t err = MZ_OK;
+    const char *password = NULL;
+    char password_buf[120];
+
+    reader->entry_verified = 0;
+
+    if (mz_zip_reader_is_open(reader) != MZ_OK)
+        return MZ_PARAM_ERROR;
+    if (!reader->file_info)
+        return MZ_PARAM_ERROR;
+
+    /* If the entry isn't open for reading, open it */
+    if (mz_zip_entry_is_open(reader->zip_handle) == MZ_OK)
+        return MZ_OK;
+
+    password = reader->password;
+
+    /* Check if we need a password and ask for it if we need to */
+    if (!password && reader->password_cb && (reader->file_info->flag & MZ_ZIP_FLAG_ENCRYPTED)) {
+        reader->password_cb(handle, reader->password_userdata, reader->file_info, password_buf, sizeof(password_buf));
+
+        password = password_buf;
+    }
+
+    err = mz_zip_entry_read_open_noSeek(reader->zip_handle, reader->raw, 0, password);
+#ifndef MZ_ZIP_NO_CRYPTO
+    if (err != MZ_OK)
+        return err;
+
+    if (mz_zip_reader_entry_get_first_hash(handle, &reader->hash_algorithm, &reader->hash_digest_size) == MZ_OK) {
+        reader->hash = mz_crypt_sha_create();
+        if (!reader->hash)
+            return MZ_MEM_ERROR;
+
+        if (reader->hash_algorithm == MZ_HASH_SHA1)
+            err = mz_crypt_sha_set_algorithm(reader->hash, MZ_HASH_SHA1);
+        else if (reader->hash_algorithm == MZ_HASH_SHA256)
+            err = mz_crypt_sha_set_algorithm(reader->hash, MZ_HASH_SHA256);
+        else
+            err = MZ_SUPPORT_ERROR;
+
+        if (err == MZ_OK)
+            mz_crypt_sha_begin(reader->hash);
+    } else if (reader->sign_required && !reader->cd_verified)
+        err = MZ_SIGN_ERROR;
+#endif
+
+    return err;
+}
 int32_t mz_zip_reader_entry_open(void *handle) {
     mz_zip_reader *reader = (mz_zip_reader *)handle;
     int32_t err = MZ_OK;

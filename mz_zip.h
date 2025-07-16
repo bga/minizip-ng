@@ -112,6 +112,8 @@ int32_t mz_zip_get_disk_number_with_cd(void *handle, uint32_t *disk_number_with_
 int32_t mz_zip_entry_is_open(void *handle);
 /* Check to see if entry is open for read/write */
 
+int32_t mz_zip_entry_skip(void *handle);
+int32_t mz_zip_entry_read_open_noSeek(void *handle, uint8_t raw, int16_t compress_level, const char *password);
 int32_t mz_zip_entry_read_open(void *handle, uint8_t raw, const char *password);
 /* Open for reading the current file in the zip file */
 

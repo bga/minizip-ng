@@ -59,6 +59,8 @@ int32_t mz_zip_reader_goto_next_entry(void *handle);
 int32_t mz_zip_reader_locate_entry(void *handle, const char *filename, uint8_t ignore_case);
 /* Locates an entry by filename */
 
+int32_t mz_zip_reader_entry_skip(void *handle);
+int32_t mz_zip_reader_entry_open_noSeek(void *handle);
 int32_t mz_zip_reader_entry_open(void *handle);
 /* Opens an entry for reading */
 

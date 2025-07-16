@@ -18,6 +18,7 @@
 #include "mz_strm_os.h"
 
 #include <stdio.h> /* fopen, fread.. */
+#include <stdbool.h>
 #include <errno.h>
 
 /***************************************************************************/
@@ -143,8 +144,19 @@ int64_t mz_stream_os_tell(void *stream) {
     return position;
 }
 
+bool mz_stream_os_isSeekable(void *stream) {
+    mz_stream_posix *posix = (mz_stream_posix *)stream;
+    return !(posix->handle == stdin || posix->handle == stdout || posix->handle == stderr);
+}
+
 int32_t mz_stream_os_seek(void *stream, int64_t offset, int32_t origin) {
     mz_stream_posix *posix = (mz_stream_posix *)stream;
+
+    if(!mz_stream_os_isSeekable(stream)) {
+        fprintf(stderr, "BGA attempt to stream seek at offset %" PRId64 " origin %" PRId32 "\n", offset, origin);
+        return MZ_SEEK_ERROR;
+    };
+
     int32_t fseek_origin = 0;
 
     switch (origin) {
