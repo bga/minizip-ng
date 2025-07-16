@@ -65,6 +65,14 @@ option(MZ_CODE_COVERAGE "Builds with code coverage flags" OFF)
 set(MZ_SANITIZER AUTO CACHE STRING "Enable sanitizer support")
 set_property(CACHE MZ_SANITIZER PROPERTY STRINGS "Memory" "Address" "Undefined" "Thread")
 
+if(DEFINED MZ_DEBUG)
+    set(CFLAGS -ggdb ${CFLAGS})
+    set(CMAKE_C_FLAGS -ggdb ${CMAKE_C_FLAGS})
+    message(STATUS "Using ggdb")
+else()
+    set(CMAKE_C_FLAGS -DNDEBUG ${CMAKE_C_FLAGS})
+endif()
+
 # Backwards compatibility
 if(DEFINED MZ_BUILD_TEST)
     set(MZ_BUILD_TESTS ${MZ_BUILD_TEST})
