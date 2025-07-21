@@ -70,7 +70,7 @@ int32_t minizip_banner(void) {
 
 int32_t minizip_help(void) {
     printf(
-        "Usage: minizip [-x][-d dir|-l|-e][-o][-f][-y][-c cp][-a][-0 to -9][-b|-m|-t][-k 512][-p pwd][-s] file.zip "
+        "Usage: minizip [-x][-d dir|-l|-e][-o][-f][-y][-c cp][-a][-A][-0 to -9][-b|-m|-t][-k 512][-p pwd][-s] file.zip "
         "[files]\n\n"
         "  -x  Extract files\n"
         "  -l  List files\n"
