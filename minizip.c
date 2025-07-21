@@ -38,6 +38,7 @@ typedef struct minizip_opt_s {
     uint8_t verbose;
     uint8_t aes;
     uint8_t outputAllMatched;
+    char const* outputSizeToFilePath;
 } minizip_opt;
 
 /***************************************************************************/
@@ -70,7 +71,7 @@ int32_t minizip_banner(void) {
 
 int32_t minizip_help(void) {
     printf(
-        "Usage: minizip [-x][-d dir|-l|-e][-o][-f][-y][-c cp][-a][-A][-0 to -9][-b|-m|-t][-k 512][-p pwd][-s] file.zip "
+        "Usage: minizip [-x][-d dir|-l|-e][-o][-f][-y][-c cp][-a][-A][-S FILE][-0 to -9][-b|-m|-t][-k 512][-p pwd][-s] file.zip "
         "[files]\n\n"
         "  -x  Extract files\n"
         "  -l  List files\n"
@@ -80,6 +81,7 @@ int32_t minizip_help(void) {
         "  -c  File names use cp437 encoding (or specified codepage)\n"
         "  -a  Append to existing zip file\n"
         "  -A  output all matched files to stdout\n"
+        "  -S  output extracted file size to FILE\n"
         "  -i  Include full path of files\n"
         "  -f  Follow symbolic links\n"
         "  -y  Store symbolic links\n"
@@ -510,6 +512,17 @@ int32_t minizip_extractMatchToStdout(const char *path, const char *pattern, cons
         if(err == MZ_OK) err = mz_zip_reader_entry_open_noSeek(reader);
         if(err == MZ_OK) {
             if(pattern == NULL || fnmatch(pattern, file_info->filename, FNM_CASEFOLD) == 0) {
+                if(options->outputSizeToFilePath != NULL) do {
+                    MINIZIP_LOG("Writing size to '%s'...\n", options->outputSizeToFilePath);
+                    
+                    FILE* f = fopen(options->outputSizeToFilePath, "w+t");
+                    if(f == NULL) {
+                        MINIZIP_ERR("Can not open outputSizeToFilePath '%s' for overwriting\n", options->outputSizeToFilePath);
+                        break;
+                    };
+                    fprintf(f, "%" PRId64 "\n", file_info->uncompressed_size);
+                    fclose(f);
+                } while(0);
                 err = mz_zip_reader_entry_save(reader, stdoutStream, minizip_stream_write_cb);
                 if(err == MZ_OK) {
                     if(!options->outputAllMatched) break;
@@ -762,6 +775,13 @@ int main(int argc, const char *argv[]) {
                 do_erase = 1;
             else if ((c == 'A'))
                 options.outputAllMatched = 1;
+            else if ((c == 'S')) {
+                if(argc - 1 == i) {
+                    MINIZIP_ERR("-S option missed FILE \n");
+                    return 1;
+                };
+                options.outputSizeToFilePath = argv[++i];
+            }
             else if ((c == 'a'))
                 options.append = 1;
             else if ((c == 'o') || (c == 'O'))
@@ -854,6 +874,10 @@ int main(int argc, const char *argv[]) {
         if (argc > path_arg + 1)
             filename_to_extract = argv[path_arg + 1];
 
+        if(options.outputSizeToFilePath != NULL && options.outputAllMatched) {
+            MINIZIP_ERR("Conflicting simiously both outputSizeToFilePath and outputAllMatched\n");
+            return 1;
+        };
         /* Extract archive */
         err = minizip_extractMatchToStdout(path, filename_to_extract, destination, password, &options, options.encoding);
     } else if (do_erase) {
